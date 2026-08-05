@@ -636,4 +636,310 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnTest) {
     btnTest.addEventListener('click', runTests);
   }
+
+  // Initialise the chatbot
+  initChatbot();
 });
+
+// ─── FAQ Chatbot Engine ───────────────────────────────────
+
+/**
+ * Returns a plain-text answer (HTML allowed) for a given user query by
+ * pattern-matching against a prioritised list of intents.  All numeric
+ * facts are derived from the live SEATS / ROOM / ROW_ZONES constants so
+ * they are always consistent with the data layer.
+ */
+function getChatbotAnswer(raw) {
+  const q = raw.toLowerCase().trim();
+
+  // ── Helpers (live data) ──────────────────────────────────
+  const totalSeats    = SEATS.length;
+  const availSeats    = SEATS.filter(s => s.available && !s.obstructed);
+  const unavailSeats  = SEATS.filter(s => !s.available);
+  const obstrSeats    = SEATS.filter(s => s.available && s.obstructed);
+  const aisleSeats    = SEATS.filter(s => s.aisle);
+  const socketSeats   = SEATS.filter(s => s.socket);
+
+  const availIds      = availSeats.map(s => `<strong>${s.id}</strong>`).join(', ');
+  const unavailIds    = unavailSeats.map(s => `<strong>${s.id}</strong>`).join(', ');
+  const obstrIds      = obstrSeats.map(s => `<strong>${s.id}</strong>`).join(', ');
+  const aisleIds      = aisleSeats.map(s => `<strong>${s.id}</strong>`).join(', ');
+  const socketIds     = socketSeats.map(s => `<strong>${s.id}</strong>`).join(', ');
+
+  // ── Intents (ordered: most specific first) ───────────────
+
+  // Greeting
+  if (/^(hi|hello|hey|howdy|good\s*(morning|afternoon|evening))[!?.,]?$/.test(q)) {
+    return `👋 Hello! I'm the <strong>Seat Finder Assistant</strong> for ${ROOM.name} (<strong>${ROOM.id}</strong>). Ask me anything about seats, scoring, zones, or error codes!`;
+  }
+
+  // Booking / read-only
+  if (/book|reserv|hold|buy|purchase|ticket|sign.?up|register/.test(q)) {
+    return `🚫 <strong>This is not a booking system.</strong><br><br>The Seat Finder is <em>read-only</em> — it recommends seats based on your preferences but <strong>never marks any seat as taken, creates a hold, or reserves anything</strong>. Selecting or highlighting a recommendation has zero effect on availability.`;
+  }
+
+  // How scoring works
+  if (/scor|point|rank|weight|calcul/.test(q)) {
+    return `📊 <strong>How scoring works:</strong><br><br>Every candidate block starts at <strong>0 points</strong>.<br><br>` +
+      `<strong>+3</strong> if your preferred zone is not <em>ANY</em> and the block's row matches it.<br>` +
+      `<strong>+1</strong> if you prefer an aisle and at least one seat in the block has an aisle.<br><br>` +
+      `No other points are added or deducted. Blocks are then sorted by <strong>score ↓ → row ↑ → starting column ↑</strong>.`;
+  }
+
+  // Aisle seats
+  if (/aisle/.test(q)) {
+    return `🚶 <strong>Aisle seats</strong> are on the edge of a row — easier to reach without disturbing others and useful if you need quick access.<br><br>` +
+      `In LH101, the <strong>${aisleSeats.length}</strong> aisle seats are: ${aisleIds}.<br><br>` +
+      `When you check <em>"Prefers Aisle"</em>, any block with at least one aisle seat scores <strong>+1</strong>.`;
+  }
+
+  // Socket / charging seats
+  if (/socket|charg|plug|power|outlet/.test(q)) {
+    return `🔌 <strong>Socket seats</strong> have a nearby power outlet — great for laptops or devices.<br><br>` +
+      `In LH101, the <strong>${socketSeats.length}</strong> socket seats are: ${socketIds}.<br><br>` +
+      `When you tick <em>"Requires Socket"</em>, only blocks where <strong>at least one seat</strong> has a socket are eligible.`;
+  }
+
+  // Zone / FRONT / MIDDLE / BACK
+  if (/zone|front|middle|back/.test(q)) {
+    const zoneList = ROW_ZONES.map(rz =>
+      `Row <strong>${rz.label}</strong> → <strong>${rz.zone}</strong>`
+    ).join('<br>');
+    return `🗺️ <strong>Zones</strong> divide the hall into sections:<br><br>${zoneList}<br><br>` +
+      `Choosing a zone (not <em>ANY</em>) adds <strong>+3</strong> to blocks in that zone. Choose <em>ANY</em> to consider all rows equally.`;
+  }
+
+  // Seat counts / available
+  if (/how many|count|total|availab|seat/.test(q)) {
+    return `🪑 <strong>LH101 seat breakdown</strong> (live from map):<br><br>` +
+      `• Total seats: <strong>${totalSeats}</strong><br>` +
+      `• Available & clear: <strong>${availSeats.length}</strong> — ${availIds}<br>` +
+      `• Unavailable: <strong>${unavailSeats.length}</strong> — ${unavailIds}<br>` +
+      `• Obstructed: <strong>${obstrSeats.length}</strong> — ${obstrIds}`;
+  }
+
+  // Why a seat is excluded
+  if (/exclud|not eligible|why.*seat|can't.*sit|unavail|obstruct/.test(q)) {
+    return `❌ <strong>A seat is excluded from recommendations if:</strong><br><br>` +
+      `1️⃣ <strong>Unavailable</strong> — the seat is already taken or blocked (${unavailIds}).<br>` +
+      `2️⃣ <strong>Obstructed</strong> — the seat exists but has a blocked view (${obstrIds}).<br><br>` +
+      `Hover over any gray or gold seat on the map to see its exclusion reason as a tooltip.`;
+  }
+
+  // INVALID_GROUP_SIZE
+  if (/invalid.group|group.?size|invalid_group/.test(q)) {
+    return `⚠️ <strong>INVALID_GROUP_SIZE</strong><br><br>` +
+      `Triggered when <em>groupSize</em> is not a whole number between <strong>1</strong> and <strong>${ROOM.columns}</strong> (inclusive).<br><br>` +
+      `Common causes: entering <code>0</code>, a negative number, a decimal, or leaving the field blank (which becomes NaN). Load sample <em>IP01 Bad Size</em> to see it live.`;
+  }
+
+  // INVALID_ZONE
+  if (/invalid.zone|invalid_zone|near.?door|bad.?zone/.test(q)) {
+    return `⚠️ <strong>INVALID_ZONE</strong><br><br>` +
+      `The <em>preferredZone</em> must be exactly one of: <strong>ANY · FRONT · MIDDLE · BACK</strong>.<br><br>` +
+      `Any other value (e.g. <code>NEAR_DOOR</code>) triggers this error. Load sample <em>IP02 Bad Zone</em> to see it live.`;
+  }
+
+  // DUPLICATE_SEAT_ID
+  if (/duplicate.*id|dup.*id|duplicate_seat|same.*id/.test(q)) {
+    return `⚠️ <strong>DUPLICATE_SEAT_ID</strong><br><br>` +
+      `Each seat must have a unique ID. If two seats share the same ID (e.g. two seats both named <code>X1</code>), the seat set is rejected immediately — even if the preference is valid.<br><br>` +
+      `Load sample <em>IS01 Dup ID</em> to see it live.`;
+  }
+
+  // DUPLICATE_COORDINATE
+  if (/duplicate.*coord|dup.*coord|duplicate_coord|same.*coord|same.*(row|col)/.test(q)) {
+    return `⚠️ <strong>DUPLICATE_COORDINATE</strong><br><br>` +
+      `Each seat must occupy a unique (row, column) position. Two different seats at the same grid location trigger this error.<br><br>` +
+      `Load sample <em>IS02 Dup Coord</em> to see it live.`;
+  }
+
+  // NO_SUITABLE_BLOCK
+  if (/no.?suitable|no.?match|no.?result|no.?block|no.?seat/.test(q)) {
+    return `🔍 <strong>NO_SUITABLE_BLOCK</strong><br><br>` +
+      `This is a valid outcome — not an error. It means no consecutive block of the requested size meets your criteria (available, not obstructed, socket if required).<br><br>` +
+      `Example: requesting <strong>5 adjacent seats</strong> always yields NO_SUITABLE_BLOCK in LH101 because every row has at least one unavailable or obstructed middle seat. Load <em>P03 No Match</em> to see it.`;
+  }
+
+  // Group size / consecutive
+  if (/group|consecutive|adjac|together|block/.test(q)) {
+    return `👥 <strong>Group size</strong> is the number of adjacent seats you need (1–${ROOM.columns}).<br><br>` +
+      `A <em>candidate block</em> is a window of exactly that many consecutive columns in a single row — every seat in the block must be available and not obstructed. The window slides across all ${ROOM.columns} columns per row.`;
+  }
+
+  // How to use / reset / sample buttons
+  if (/how.*use|reset|sample|demo|try|start|begin|get.?start/.test(q)) {
+    return `🚀 <strong>How to use:</strong><br><br>` +
+      `1. Set <em>Group Size</em>, <em>Zone</em>, Socket, and Aisle in the left panel.<br>` +
+      `2. Click <strong>✨ Recommend</strong> to see the best block highlighted green on the map.<br>` +
+      `3. Click any alternative in the results to shift the highlight (read-only).<br>` +
+      `4. Use the <strong>Load Sample</strong> buttons to instantly demo P01–P03 and all error cases.<br>` +
+      `5. Click <strong>↺ Reset</strong> to return to the default P01 setup.`;
+  }
+
+  // What is P01 / P02 / P03
+  if (/p0?1|p0?2|p0?3/.test(q)) {
+    return `📋 <strong>Preset scenarios:</strong><br><br>` +
+      `<strong>P01</strong> — Group 2, MIDDLE, socket + aisle → recommends <strong>B1 + B2</strong> (score 4).<br>` +
+      `<strong>P02</strong> — Group 1, ANY zone, no extras → recommends <strong>A1</strong> (score 0, tie-break).<br>` +
+      `<strong>P03</strong> — Group 5, ANY zone → <strong>NO_SUITABLE_BLOCK</strong> (no row has 5 clear consecutive seats).`;
+  }
+
+  // What is this / about
+  if (/what.*this|what.*app|what.*tool|about|purpose|help/.test(q)) {
+    return `ℹ️ The <strong>Lecture Hall Seat Finder</strong> helps students pick the best available seat or group of adjacent seats in <strong>${ROOM.name}</strong> based on preferences like zone, socket, and aisle.<br><br>` +
+      `It ranks all eligible consecutive blocks by a deterministic score and highlights the top recommendation on the live seat map. It is <em>read-only</em> — nothing is reserved or booked.`;
+  }
+
+  // Fallback
+  return `🤔 I didn't quite catch that. Try asking about:<br><br>` +
+    `• <em>Scoring</em> — how points are calculated<br>` +
+    `• <em>Aisle / Socket / Zone</em> — what features mean<br>` +
+    `• <em>Seat counts</em> — live breakdown from the map<br>` +
+    `• <em>Error codes</em> — INVALID_GROUP_SIZE, INVALID_ZONE, etc.<br>` +
+    `• <em>Booking</em> — read-only disclaimer<br><br>` +
+    `Or use the quick-chip buttons below! 👇`;
+}
+
+// ── Chatbot UI ────────────────────────────────────────────
+
+function initChatbot() {
+  const toggle   = document.getElementById('chatToggle');
+  const panel    = document.getElementById('chatPanel');
+  const closeBtn = document.getElementById('chatClose');
+  const messages = document.getElementById('chatMessages');
+  const input    = document.getElementById('chatInput');
+  const sendBtn  = document.getElementById('chatSend');
+  const badge    = document.getElementById('chatBadge');
+  const chips    = document.querySelectorAll('.chat-chip');
+
+  if (!toggle || !panel) return; // guard: elements not present
+
+  let isOpen = false;
+
+  // ── Open / close ──────────────────────────────────────
+  function openChat() {
+    isOpen = true;
+    panel.classList.add('chat-panel--open');
+    toggle.setAttribute('aria-expanded', 'true');
+    badge.classList.remove('chat-toggle__badge--visible');
+    setTimeout(() => input.focus(), 300);
+    scrollToBottom();
+  }
+
+  function closeChat() {
+    isOpen = false;
+    panel.classList.remove('chat-panel--open');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.focus();
+  }
+
+  toggle.addEventListener('click', () => isOpen ? closeChat() : openChat());
+  closeBtn.addEventListener('click', closeChat);
+
+  // Close on Escape
+  panel.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeChat();
+  });
+
+  // ── Send helpers ──────────────────────────────────────
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      messages.scrollTop = messages.scrollHeight;
+    });
+  }
+
+  function appendMessage(html, role) {
+    const avatar = role === 'bot' ? '🤖' : '🎓';
+    const div = document.createElement('div');
+    div.className = `chat-msg chat-msg--${role}`;
+    div.innerHTML = `
+      <div class="chat-msg__avatar" aria-hidden="true">${avatar}</div>
+      <div class="chat-msg__bubble">${html}</div>`;
+    messages.appendChild(div);
+    scrollToBottom();
+  }
+
+  function showTyping() {
+    const div = document.createElement('div');
+    div.className = 'chat-typing';
+    div.id = 'chatTyping';
+    div.setAttribute('aria-label', 'Assistant is typing');
+    div.innerHTML = `
+      <div class="chat-msg__avatar" aria-hidden="true">🤖</div>
+      <div class="chat-typing__bubble">
+        <div class="chat-typing__dot"></div>
+        <div class="chat-typing__dot"></div>
+        <div class="chat-typing__dot"></div>
+      </div>`;
+    messages.appendChild(div);
+    scrollToBottom();
+  }
+
+  function removeTyping() {
+    const t = document.getElementById('chatTyping');
+    if (t) t.remove();
+  }
+
+  function sendMessage(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    appendMessage(trimmed, 'user');
+    input.value = '';
+    sendBtn.disabled = true;
+
+    // Simulate ~600 ms typing delay
+    showTyping();
+    setTimeout(() => {
+      removeTyping();
+      const answer = getChatbotAnswer(trimmed);
+      appendMessage(answer, 'bot');
+
+      // If panel is closed, show unread badge
+      if (!isOpen) {
+        badge.classList.add('chat-toggle__badge--visible');
+      }
+    }, 600 + Math.random() * 300); // 600–900 ms feels natural
+  }
+
+  // ── Input / Send button ───────────────────────────────
+  input.addEventListener('input', () => {
+    sendBtn.disabled = input.value.trim().length === 0;
+    // Auto-resize textarea
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 80) + 'px';
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!sendBtn.disabled) sendMessage(input.value);
+    }
+  });
+
+  sendBtn.addEventListener('click', () => sendMessage(input.value));
+
+  // ── Quick chips ───────────────────────────────────────
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (!isOpen) openChat();
+      sendMessage(chip.getAttribute('data-chip'));
+    });
+  });
+
+  // ── Welcome message (shown once on first open) ────────
+  let welcomed = false;
+  toggle.addEventListener('click', () => {
+    if (!welcomed && isOpen) {
+      welcomed = true;
+      setTimeout(() => {
+        appendMessage(
+          `👋 Hi! I'm the <strong>Seat Finder Assistant</strong> for <strong>${ROOM.name}</strong>.<br><br>` +
+          `Ask me anything about seats, scoring, zones, socket/aisle features, or error codes — my answers come straight from the live room data. Use the chips below for quick questions!`,
+          'bot'
+        );
+      }, 350);
+    }
+  });
+}

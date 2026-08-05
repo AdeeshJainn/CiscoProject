@@ -164,6 +164,52 @@
 
   </div>
 
+  <!-- ═══ FAQ Chatbot Widget ═══ -->
+
+  <!-- Toggle button -->
+  <button class="chat-toggle" id="chatToggle" aria-label="Open FAQ chatbot" aria-expanded="false" aria-controls="chatPanel">
+    <span class="chat-toggle__icon" id="chatToggleIcon">💬</span>
+    <span class="chat-toggle__badge" id="chatBadge" aria-hidden="true"></span>
+  </button>
+
+  <!-- Chat panel -->
+  <aside class="chat-panel" id="chatPanel" role="dialog" aria-label="Seat Finder FAQ Assistant" aria-modal="false">
+    <div class="chat-header">
+      <div class="chat-header__avatar" aria-hidden="true">🤖</div>
+      <div class="chat-header__info">
+        <div class="chat-header__name">Seat Finder Assistant</div>
+        <div class="chat-header__status">Online · LH101 live data</div>
+      </div>
+      <button class="chat-close" id="chatClose" aria-label="Close chat">✕</button>
+    </div>
+
+    <div class="chat-messages" id="chatMessages" aria-live="polite" aria-atomic="false">
+      <!-- Messages injected by JS -->
+    </div>
+
+    <!-- Quick-chip suggestions -->
+    <div class="chat-chips" id="chatChips" aria-label="Quick questions">
+      <button class="chat-chip" data-chip="How does scoring work?">📊 Scoring</button>
+      <button class="chat-chip" data-chip="What is an aisle seat?">🚶 Aisle</button>
+      <button class="chat-chip" data-chip="What is a socket seat?">🔌 Socket</button>
+      <button class="chat-chip" data-chip="How many seats are available?">🪑 Seat count</button>
+      <button class="chat-chip" data-chip="Why is a seat excluded?">❌ Exclusions</button>
+      <button class="chat-chip" data-chip="What does INVALID_GROUP_SIZE mean?">⚠️ Error codes</button>
+      <button class="chat-chip" data-chip="Is this a booking system?">📋 Booking?</button>
+    </div>
+
+    <div class="chat-input-row">
+      <textarea
+        class="chat-input"
+        id="chatInput"
+        placeholder="Ask about seats, scoring, zones…"
+        rows="1"
+        aria-label="Type your question"
+      ></textarea>
+      <button class="chat-send" id="chatSend" aria-label="Send message" disabled>➤</button>
+    </div>
+  </aside>
+
   <script src="app.js"></script>
 </body>
 </html>
