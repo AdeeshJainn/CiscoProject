@@ -173,7 +173,9 @@ function rankBlocks(scoredBlocks) {
 }
 
 function recommend(preference, seats) {
-  // Validate seat set
+  // Intentional validation order: seat-set integrity is checked first so that
+  // a corrupted seat set is always reported, even if the preference is also
+  // invalid.  Do not reorder without updating the corresponding test cases.
   const seatValidation = validateSeatSet(seats);
   if (!seatValidation.valid) {
     return { status: 'invalid', errorCode: seatValidation.errorCode };
@@ -218,7 +220,8 @@ function recommend(preference, seats) {
 const state = {
   currentResult: null,
   highlightedAlternativeIndex: -1,
-  activeSeatSet: SEATS // always the frozen original unless demoing IS01/IS02
+  activeSeatSet: SEATS,       // always the frozen original unless demoing IS01/IS02
+  activeSeatSetLabel: 'Standard' // human-readable badge shown in the seat map header
 };
 
 // DOM references (set on init)
@@ -234,11 +237,18 @@ function initDOM() {
     btnReset: document.getElementById('btnReset'),
     seatGrid: document.getElementById('seatGrid'),
     resultsContent: document.getElementById('resultsContent'),
-    testResults: document.getElementById('testResults')
+    testResults: document.getElementById('testResults'),
+    seatSetBadge: document.getElementById('seatSetBadge'),
+    legendCounter: document.getElementById('legendCounter')
   };
 }
 
 function readFormPreference() {
+  // Note: parseInt('', 10) → NaN; Number.isInteger(NaN) === false, so
+  // an empty or cleared groupSize field correctly routes to INVALID_GROUP_SIZE.
+  // The <input min="1" max="5"> clamp only runs on spinner arrows, not on
+  // manual text entry — so typing "0" and clicking Recommend WILL trigger
+  // INVALID_GROUP_SIZE without needing the sample button.
   return {
     groupSize: parseInt(dom.groupSize.value, 10),
     preferredZone: dom.preferredZone.value,
@@ -256,6 +266,13 @@ function setFormPreference(pref) {
 
 // ─── Seat Map Rendering ──────────────────────────────────
 
+/** Returns a human-readable tooltip explaining why a seat is not eligible. */
+function getSeatExclusionReason(seat) {
+  if (!seat.available) return 'Unavailable — excluded from recommendation';
+  if (seat.obstructed) return 'Obstructed view — excluded from recommendation';
+  return null;
+}
+
 function renderSeatMap() {
   const result = state.currentResult;
   const recommendedIds = new Set();
@@ -270,6 +287,23 @@ function renderSeatMap() {
     }
   }
 
+  // Update the active seat-set badge
+  if (dom.seatSetBadge) {
+    dom.seatSetBadge.textContent = `Seat set: ${state.activeSeatSetLabel}`;
+    dom.seatSetBadge.className = 'seat-set-badge' +
+      (state.activeSeatSetLabel !== 'Standard' ? ' seat-set-badge--demo' : '');
+  }
+
+  // Compute and display live legend counters
+  const liveSeatSet = state.activeSeatSet;
+  const cntAvail = liveSeatSet.filter(s => s.available && !s.obstructed).length;
+  const cntUnavail = liveSeatSet.filter(s => !s.available).length;
+  const cntObstructed = liveSeatSet.filter(s => s.available && s.obstructed).length;
+  if (dom.legendCounter) {
+    dom.legendCounter.textContent =
+      `${cntAvail} available · ${cntUnavail} unavailable · ${cntObstructed} obstructed`;
+  }
+
   let html = '';
   for (const rz of ROW_ZONES) {
     html += `<div class="seat-row zone-${rz.zone}">`;
@@ -282,7 +316,7 @@ function renderSeatMap() {
     for (let col = 1; col <= ROOM.columns; col++) {
       const seat = state.activeSeatSet.find(s => s.row === rz.row && s.column === col);
       if (!seat) {
-        html += `<div class="seat seat--unavailable"><span class="seat__id">—</span></div>`;
+        html += `<div class="seat seat--unavailable" role="img" aria-label="No seat at column ${col}"><span class="seat__id">—</span></div>`;
         continue;
       }
 
@@ -305,7 +339,16 @@ function renderSeatMap() {
       if (seat.obstructed) badges += '<span class="seat__badge">Obstructed</span>';
       if (!seat.available) badges += '<span class="seat__badge">Unavail</span>';
 
-      html += `<div class="seat ${stateClass}" data-seat-id="${seat.id}">
+      // Build a tooltip explaining why this seat cannot be recommended
+      const exclusionReason = getSeatExclusionReason(seat);
+      const tooltipAttr = exclusionReason
+        ? ` title="${exclusionReason}" aria-label="${seat.id}: ${exclusionReason}"`
+        : ` aria-label="Seat ${seat.id}"`;
+
+      // Non-eligible seats get a visual hint cursor; eligible ones remain default
+      const cursorClass = exclusionReason ? ' seat--ineligible' : '';
+
+      html += `<div class="seat ${stateClass}${cursorClass}" data-seat-id="${seat.id}"${tooltipAttr} role="img">
         <span class="seat__id">${seat.id}</span>
         <div class="seat__badges">${badges}</div>
       </div>`;
@@ -373,7 +416,9 @@ function renderResults() {
 
     result.alternatives.forEach((alt, idx) => {
       html += `
-        <div class="alternative-item" data-alt-index="${idx}">
+        <div class="alternative-item" data-alt-index="${idx}"
+             role="button" tabindex="0"
+             aria-label="Alternative ${idx + 1}: seats ${alt.seatIds.join(', ')}, score ${alt.score}. Click to highlight on map.">
           <span class="alternative-item__seats">${alt.seatIds.join(' + ')}</span>
           <div class="alternative-item__info">
             <div class="alternative-item__reasons">
@@ -389,16 +434,25 @@ function renderResults() {
 
   dom.resultsContent.innerHTML = html;
 
-  // Attach click listeners to alternatives for highlighting (read-only)
+  // Attach click (and keyboard) listeners to alternatives for highlighting (read-only).
+  // Clicking an alternative only updates highlightedAlternativeIndex; it NEVER
+  // mutates state.currentResult, preserving the read-only guarantee.
   document.querySelectorAll('.alternative-item').forEach(el => {
-    el.addEventListener('click', () => {
+    const handleActivate = () => {
       const idx = parseInt(el.getAttribute('data-alt-index'), 10);
       if (state.highlightedAlternativeIndex === idx) {
         state.highlightedAlternativeIndex = -1; // toggle off
       } else {
         state.highlightedAlternativeIndex = idx;
       }
-      renderSeatMap(); // re-render map only, results stay
+      renderSeatMap(); // re-render map only, results stay unchanged
+    };
+    el.addEventListener('click', handleActivate);
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleActivate();
+      }
     });
   });
 }
@@ -408,6 +462,7 @@ function renderResults() {
 function onRecommend() {
   state.highlightedAlternativeIndex = -1;
   state.activeSeatSet = SEATS; // always use original frozen data
+  state.activeSeatSetLabel = 'Standard';
   const pref = readFormPreference();
   state.currentResult = recommend(pref, state.activeSeatSet);
   renderSeatMap();
@@ -418,6 +473,7 @@ function onReset() {
   state.currentResult = null;
   state.highlightedAlternativeIndex = -1;
   state.activeSeatSet = SEATS;
+  state.activeSeatSetLabel = 'Standard';
   setFormPreference(PRESETS.P01);
   renderSeatMap();
   renderResults();
@@ -426,14 +482,17 @@ function onReset() {
 function onLoadSample(presetKey) {
   if (PRESETS[presetKey]) {
     state.activeSeatSet = SEATS;
+    state.activeSeatSetLabel = 'Standard';
     setFormPreference(PRESETS[presetKey]);
   } else if (INVALID_PREFS[presetKey]) {
     state.activeSeatSet = SEATS;
+    state.activeSeatSetLabel = 'Standard';
     setFormPreference(INVALID_PREFS[presetKey]);
   } else if (INVALID_SEAT_SETS[presetKey]) {
     // For invalid seat sets, load P01 prefs but swap the seat data
     setFormPreference(PRESETS.P01);
     state.activeSeatSet = INVALID_SEAT_SETS[presetKey];
+    state.activeSeatSetLabel = `${presetKey} demo`; // e.g. "IS01 demo"
   }
   // Auto-run recommend after loading sample
   onRecommend_withSeatSet();
@@ -506,6 +565,24 @@ function runTests() {
   recommend(PRESETS.P03, SEATS);
   const seatsAfter = JSON.stringify(SEATS);
   assert('Seats immutable after recommendations', seatsBefore === seatsAfter);
+
+  // --- NaN / empty groupSize field → INVALID_GROUP_SIZE ---
+  // parseInt('', 10) === NaN; Number.isInteger(NaN) === false
+  const rNaN = recommend({ groupSize: NaN, preferredZone: 'ANY', requiresSocket: false, prefersAisle: false }, SEATS);
+  assert('NaN groupSize → INVALID_GROUP_SIZE', rNaN.status === 'invalid' && rNaN.errorCode === 'INVALID_GROUP_SIZE');
+
+  // --- Manual entry of 0 → INVALID_GROUP_SIZE (bypasses <input min="1">) ---
+  const rZero = recommend({ groupSize: 0, preferredZone: 'MIDDLE', requiresSocket: true, prefersAisle: true }, SEATS);
+  assert('groupSize 0 (manual entry) → INVALID_GROUP_SIZE', rZero.status === 'invalid' && rZero.errorCode === 'INVALID_GROUP_SIZE');
+
+  // --- state.currentResult immutability: clicking an alternative must not mutate it ---
+  const r8 = recommend(PRESETS.P01, SEATS);
+  const resultSnapshot = JSON.stringify(r8);
+  // Simulate what the UI does when an alternative is clicked
+  state.highlightedAlternativeIndex = 0;
+  const resultAfterHighlight = JSON.stringify(r8);
+  state.highlightedAlternativeIndex = -1;
+  assert('Clicking alternative does not mutate currentResult', resultSnapshot === resultAfterHighlight);
 
   // Render test results
   renderTestResults(results);

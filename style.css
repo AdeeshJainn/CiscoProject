@@ -441,6 +441,52 @@ body::before {
   gap: 16px;
 }
 
+/* Header row: title + badge side-by-side */
+.seat-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.seat-map-header .card-title {
+  margin-bottom: 0; /* override default, spacing handled by gap */
+}
+
+/* Active seat-set indicator badge */
+.seat-set-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  background: hsla(210, 80%, 55%, 0.08);
+  border: 1px solid hsla(210, 80%, 55%, 0.2);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.seat-set-badge::before {
+  content: '●';
+  font-size: 8px;
+  color: var(--accent-green);
+}
+
+/* Demo variant (IS01/IS02) — amber warning colour */
+.seat-set-badge--demo {
+  background: hsla(45, 90%, 55%, 0.08);
+  border-color: hsla(45, 90%, 55%, 0.25);
+  color: var(--accent-gold);
+}
+
+.seat-set-badge--demo::before {
+  color: var(--accent-gold);
+}
+
 .seat-map-stage {
   position: relative;
   padding: 20px;
@@ -544,6 +590,12 @@ body::before {
   position: relative;
 }
 
+/* Non-eligible seats (unavailable / obstructed) show an info cursor to signal
+   that a tooltip is available on hover. */
+.seat--ineligible {
+  cursor: help;
+}
+
 .seat__id {
   font-size: 15px;
   font-weight: 700;
@@ -638,6 +690,15 @@ body::before {
 @keyframes seat-pulse {
   0%, 100% { box-shadow: 0 0 16px var(--accent-green-glow), inset 0 0 12px hsla(150, 80%, 48%, 0.08); }
   50% { box-shadow: 0 0 28px var(--accent-green-glow), inset 0 0 16px hsla(150, 80%, 48%, 0.12); }
+}
+
+/* Legend counter (live seat-count summary) */
+.legend-counter {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0 2px 6px;
+  letter-spacing: 0.2px;
 }
 
 /* --- Legend --- */
@@ -818,6 +879,13 @@ body::before {
 .alternative-item:hover {
   border-color: hsla(270, 55%, 58%, 0.3);
   background: hsla(270, 55%, 58%, 0.06);
+}
+
+/* Keyboard focus ring for accessibility */
+.alternative-item:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-color: var(--accent-blue);
 }
 
 .alternative-item__seats {

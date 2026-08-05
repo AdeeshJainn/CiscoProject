@@ -97,7 +97,10 @@
 
       <!-- ── Right: Seat Map ── -->
       <section class="glass-card seat-map-wrapper">
-        <div class="card-title"><span class="icon">🗺️</span> Seat Map — Lecture Hall 101</div>
+        <div class="seat-map-header">
+          <div class="card-title"><span class="icon">🗺️</span> Seat Map — Lecture Hall 101</div>
+          <span class="seat-set-badge" id="seatSetBadge">Seat set: Standard</span>
+        </div>
 
         <div class="seat-map-stage">
           <div class="stage-label">Stage / Projector Screen</div>
@@ -116,6 +119,7 @@
         </div>
 
         <!-- Legend -->
+        <div class="legend-counter" id="legendCounter"></div>
         <div class="legend">
           <div class="legend-item">
             <div class="legend-swatch legend-swatch--available"></div>
