@@ -1,0 +1,23 @@
+# Lecture-Hall Seat Finder — Tasks
+
+- `[x]` **Step 1**: Data Layer & Validation
+  - `[x]` Define ROOM, ROW_ZONES, SEATS constants
+  - `[x]` Define preset preferences (P01–P03, IP01–IP02, IS01–IS02)
+  - `[x]` Implement `validateSeatSet()` and `validatePreference()`
+- `[x]` **Step 2**: Scoring & Ranking Engine
+  - `[x]` Implement `findCandidateBlocks()`
+  - `[x]` Implement `scoreBlock()` with reason tracking
+  - `[x]` Implement `rankBlocks()` sort logic
+  - `[x]` Implement `recommend()` orchestration
+- `[x]` **Step 3**: UI Layout & Design
+  - `[x]` Create `style.css` design system
+  - `[x]` Create `index.html` semantic structure
+- `[x]` **Step 4**: Interactive Wiring
+  - `[x]` Connect form → engine → render pipeline
+  - `[x]` Implement seat map rendering with highlights
+  - `[x]` Implement results panel rendering
+  - `[x]` Sample/Reset controls
+  - `[x]` Immutability guarantee (Object.freeze)
+- `[x]` **Step 5**: Testing & Validation
+  - `[x]` Inline test suite (23/23 passed)
+  - `[x]` Manual walkthrough of all acceptance criteria

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Lecture Hall Seat Finder — find and recommend suitable seats or adjacent groups based on student preferences in Lecture Hall 101.">
+  <title>Lecture Hall Seat Finder | LH101</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- ═══ Header ═══ -->
+    <header class="app-header">
+      <div class="app-header__title">
+        <span class="app-header__icon">🎓</span>
+        <div class="app-header__text">
+          <h1>Lecture Hall Seat Finder</h1>
+          <span>Smart Seat Recommendations</span>
+        </div>
+      </div>
+      <div class="app-header__badge">
+        <span class="dot"></span>
+        LH101
+      </div>
+    </header>
+
+    <!-- ═══ Main Grid: Preferences + Seat Map ═══ -->
+    <div class="main-grid">
+
+      <!-- ── Left: Preferences Panel ── -->
+      <aside class="glass-card" id="preferencesPanel">
+        <div class="card-title"><span class="icon">⚙️</span> Preferences</div>
+
+        <form class="preference-form" onsubmit="return false;">
+
+          <div class="form-group">
+            <label for="groupSize">Group Size</label>
+            <input type="number" id="groupSize" min="1" max="5" value="2" step="1">
+          </div>
+
+          <div class="form-group">
+            <label for="preferredZone">Preferred Zone</label>
+            <select id="preferredZone">
+              <option value="ANY">Any Zone</option>
+              <option value="FRONT">Front</option>
+              <option value="MIDDLE" selected>Middle</option>
+              <option value="BACK">Back</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Features</label>
+            <div class="toggle-row">
+              <span>🔌 Requires Socket</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="requiresSocket" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="toggle-row">
+              <span>🚶 Prefers Aisle</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="prefersAisle" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <button class="btn btn-primary" id="btnRecommend" type="button">
+            ✨ Recommend
+          </button>
+
+          <div class="btn-group">
+            <button class="btn btn-secondary" id="btnReset" type="button">↺ Reset</button>
+            <button class="btn btn-secondary" id="btnRunTests" type="button">🧪 Run Tests</button>
+          </div>
+
+        </form>
+
+        <!-- Sample Buttons -->
+        <div class="sample-buttons">
+          <div class="card-title" style="margin-bottom:4px"><span class="icon">📋</span> Load Sample</div>
+          <button class="btn-sample" data-sample="P01">P01 Normal</button>
+          <button class="btn-sample" data-sample="P02">P02 Boundary</button>
+          <button class="btn-sample" data-sample="P03">P03 No Match</button>
+          <button class="btn-sample invalid" data-sample="IP01">IP01 Bad Size</button>
+          <button class="btn-sample invalid" data-sample="IP02">IP02 Bad Zone</button>
+          <button class="btn-sample invalid" data-sample="IS01">IS01 Dup ID</button>
+          <button class="btn-sample invalid" data-sample="IS02">IS02 Dup Coord</button>
+        </div>
+      </aside>
+
+      <!-- ── Right: Seat Map ── -->
+      <section class="glass-card seat-map-wrapper">
+        <div class="card-title"><span class="icon">🗺️</span> Seat Map — Lecture Hall 101</div>
+
+        <div class="seat-map-stage">
+          <div class="stage-label">Stage / Projector Screen</div>
+
+          <!-- Column Headers -->
+          <div class="col-headers">
+            <div class="col-header">Col 1</div>
+            <div class="col-header">Col 2</div>
+            <div class="col-header">Col 3</div>
+            <div class="col-header">Col 4</div>
+            <div class="col-header">Col 5</div>
+          </div>
+
+          <!-- Seat Grid (rendered by JS) -->
+          <div class="seat-grid" id="seatGrid"></div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-swatch legend-swatch--available"></div>
+            <span>Available</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch legend-swatch--unavailable"></div>
+            <span>Unavailable</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch legend-swatch--obstructed"></div>
+            <span>Obstructed</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch legend-swatch--recommended"></div>
+            <span>Recommended</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch legend-swatch--alternative"></div>
+            <span>Alt. Highlight</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ═══ Results Panel ═══ -->
+    <section class="glass-card results-panel">
+      <div class="card-title"><span class="icon">📊</span> Results</div>
+      <div id="resultsContent">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- ═══ Test Results (hidden by default) ═══ -->
+    <section class="glass-card test-panel">
+      <div class="card-title"><span class="icon">🧪</span> Test Results</div>
+      <div class="test-results" id="testResults" style="display:none;">
+        <!-- Populated by runTests() -->
+      </div>
+    </section>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
